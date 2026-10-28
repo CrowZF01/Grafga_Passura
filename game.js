@@ -321,6 +321,32 @@ function drawLightningFlashes() {
 // ─── Large Dungeon Map Generation ────────────────────────────
 // 0 = Floor, 1 = Solid Stone Wall, 2 = Decorative Pillar
 const MAP = [];
+let miniMapCanvas = null;
+
+function updateMiniMapCache() {
+    miniMapCanvas = document.createElement('canvas');
+    miniMapCanvas.width = 148;
+    miniMapCanvas.height = 106;
+    const mctx = miniMapCanvas.getContext('2d');
+    
+    // Background of minimap
+    mctx.fillStyle = '#141822';
+    mctx.fillRect(0, 0, 148, 106);
+
+    const tw = 148 / MAP_COLS;
+    const th = 106 / MAP_ROWS;
+
+    // Draw stone walls in sleek slate color
+    mctx.fillStyle = '#424c5e';
+    for (let r = 0; r < MAP_ROWS; r++) {
+        for (let c = 0; c < MAP_COLS; c++) {
+            if (MAP[r][c] === 1) {
+                mctx.fillRect(c * tw, r * th, Math.ceil(tw), Math.ceil(th));
+            }
+        }
+    }
+}
+
 function generateMap() {
     MAP.length = 0;
     for (let r = 0; r < MAP_ROWS; r++) {
@@ -359,32 +385,47 @@ function generateMap() {
             }
         }
     }
+
+    // Update the cached minimap graphic
+    updateMiniMapCache();
 }
 
 function isWall(x, y) {
     const c = Math.floor(x / TILE);
     const r = Math.floor(y / TILE);
     if (r < 0 || r >= MAP_ROWS || c < 0 || c >= MAP_COLS) return true;
-    return MAP[r][c] === 1;
+    return MAP[r] && MAP[r][c] === 1;
+}
+
+function isWallBox(x, y, radius = 14) {
+    const m = radius;
+    return isWall(x - m, y - m) || isWall(x + m, y - m) ||
+           isWall(x - m, y + m) || isWall(x + m, y + m) ||
+           isWall(x, y - m) || isWall(x, y + m) ||
+           isWall(x - m, y) || isWall(x + m, y);
 }
 
 function wallSlide(obj, nx, ny, radius = 14) {
     const m = radius;
-    // Direct movement check
-    if (!isWall(nx - m, ny - m) && !isWall(nx + m, ny - m) &&
-        !isWall(nx - m, ny + m) && !isWall(nx + m, ny + m)) {
-        obj.x = nx; obj.y = ny; return;
+    // 1. Direct move
+    if (!isWallBox(nx, ny, m)) {
+        obj.x = nx; obj.y = ny; return true;
     }
-    // Slide along X
-    if (!isWall(nx - m, obj.y - m) && !isWall(nx + m, obj.y - m) &&
-        !isWall(nx - m, obj.y + m) && !isWall(nx + m, obj.y + m)) {
-        obj.x = nx; return;
+    // 2. Slide X only
+    if (!isWallBox(nx, obj.y, m)) {
+        obj.x = nx; return true;
     }
-    // Slide along Y
-    if (!isWall(obj.x - m, ny - m) && !isWall(obj.x + m, ny - m) &&
-        !isWall(obj.x - m, ny + m) && !isWall(obj.x + m, ny + m)) {
-        obj.y = ny; return;
+    // 3. Slide Y only
+    if (!isWallBox(obj.x, ny, m)) {
+        obj.y = ny; return true;
     }
+    // 4. Corner nudges: if caught on a convex corner, nudge along open tangent
+    const step = 4;
+    if (!isWallBox(obj.x + step, obj.y, m)) { obj.x += step; return true; }
+    if (!isWallBox(obj.x - step, obj.y, m)) { obj.x -= step; return true; }
+    if (!isWallBox(obj.x, obj.y + step, m)) { obj.y += step; return true; }
+    if (!isWallBox(obj.x, obj.y - step, m)) { obj.y -= step; return true; }
+    return false;
 }
 
 function drawMap() {
@@ -707,6 +748,12 @@ function spawnEnemy(type, x, y) {
         shootCd: t.shootCd || 0,
         phaseTimer: t.phaseTimer || 0,
         dead: false,
+        // Anti-stuck & navigation system
+        lastX: x,
+        lastY: y,
+        stuckTimer: 0,
+        steerTimer: 0,
+        steerAngle: 0,
     };
     enemies.push(e);
     return e;
@@ -1477,33 +1524,81 @@ function updateEnemies(dt) {
         e.vx *= Math.pow(0.03, dt);
         e.vy *= Math.pow(0.03, dt);
 
+        // ── Smart Anti-Stuck & Navigation AI ──
+        const directAngle = Math.atan2(player.y - e.y, player.x - e.x);
+        
+        // Track displacement to detect if stuck against an obstacle
+        const movedDist = Math.hypot(e.x - (e.lastX || e.x), e.y - (e.lastY || e.y));
+        e.lastX = e.x;
+        e.lastY = e.y;
+
+        if (movedDist < e.speed * dt * 0.25 && e.stunTimer <= 0) {
+            e.stuckTimer = (e.stuckTimer || 0) + dt;
+        } else {
+            e.stuckTimer = Math.max(0, (e.stuckTimer || 0) - dt * 2.5);
+        }
+
+        // If stuck for over 0.18s, pick an evasive angle to glide around the obstacle
+        if (e.stuckTimer > 0.18) {
+            e.steerTimer = 0.55;
+            const side = (e.id % 2 === 0) ? 1 : -1;
+            const testOffsets = [side * 1.1, -side * 1.1, side * 1.7, -side * 1.7];
+            let bestAngle = directAngle + side * 1.3;
+            for (const off of testOffsets) {
+                const probeA = directAngle + off;
+                const probeX = e.x + Math.cos(probeA) * e.radius * 2.5;
+                const probeY = e.y + Math.sin(probeA) * e.radius * 2.5;
+                if (!isWallBox(probeX, probeY, e.radius)) {
+                    bestAngle = probeA;
+                    break;
+                }
+            }
+            e.steerAngle = bestAngle;
+            e.stuckTimer = 0;
+        }
+
+        if (e.steerTimer > 0) {
+            e.steerTimer -= dt;
+        }
+
+        const moveAngle = (e.steerTimer > 0) ? e.steerAngle : directAngle;
+        e.angle = directAngle; // Always face player for visual aiming
+
         if (e.type === 'wizard' && e.ranged) {
             const d = dist(e, player);
-            const a = Math.atan2(player.y - e.y, player.x - e.x);
-            e.angle = a;
             const preferDist = 240;
             const moveDir = d < preferDist ? -1 : (d > 320 ? 1 : 0);
             const spd = e.speed * e.slowFactor;
-            const nx = e.x + (Math.cos(a) * moveDir * spd + e.vx) * dt;
-            const ny = e.y + (Math.sin(a) * moveDir * spd + e.vy) * dt;
+            const moveDirAngle = moveDir < 0 ? moveAngle + Math.PI : moveAngle;
+            const nx = e.x + (moveDir !== 0 ? Math.cos(moveDirAngle) * spd + e.vx : e.vx) * dt;
+            const ny = e.y + (moveDir !== 0 ? Math.sin(moveDirAngle) * spd + e.vy : e.vy) * dt;
             wallSlide(e, nx, ny, e.radius);
 
             e.shootCd -= dt;
             if (e.shootCd <= 0) {
                 e.shootCd = e.shootRate;
-                spawnEnemyProjectile(e.x, e.y, a + rng(-0.15, 0.15), 180, e.damage, e.color);
+                spawnEnemyProjectile(e.x, e.y, directAngle + rng(-0.15, 0.15), 180, e.damage, e.color);
             }
         } else {
-            const a = Math.atan2(player.y - e.y, player.x - e.x);
-            e.angle = a;
             const spd = e.speed * e.slowFactor;
-            const nx = e.x + (Math.cos(a) * spd + e.vx) * dt;
-            const ny = e.y + (Math.sin(a) * spd + e.vy) * dt;
+            const nx = e.x + (Math.cos(moveAngle) * spd + e.vx) * dt;
+            const ny = e.y + (Math.sin(moveAngle) * spd + e.vy) * dt;
             wallSlide(e, nx, ny, e.radius);
 
             if (dist(e, player) < player.bodyRadius + e.radius + 3 && player.invincible <= 0) {
                 damagePlayer(e.damage * dt * 2.2);
             }
+        }
+
+        // Failsafe: if an enemy ever gets inside a wall, gently push out toward open floor
+        if (isWall(e.x, e.y)) {
+            const tcX = Math.floor(e.x / TILE) * TILE + TILE / 2;
+            const tcY = Math.floor(e.y / TILE) * TILE + TILE / 2;
+            const pushX = e.x - tcX || rng(-1, 1);
+            const pushY = e.y - tcY || rng(-1, 1);
+            const pushLen = Math.hypot(pushX, pushY) || 1;
+            e.x += (pushX / pushLen) * 70 * dt;
+            e.y += (pushY / pushLen) * 70 * dt;
         }
 
         // Boid separation between enemies
@@ -1581,16 +1676,29 @@ function buildWave(wn) {
     wave.toSpawn = list;
 }
 
-function getSpawnPos() {
-    // Spawn within 400 - 800 px of player on a valid floor tile
+function getSpawnPos(type = 'goblin') {
+    const rad = ENEMY_TYPES[type]?.radius || 15;
     let x, y, tries = 0;
     do {
         const ang = rng(0, Math.PI * 2);
-        const d = rng(450, 750);
-        x = clamp(player.x + Math.cos(ang) * d, TILE * 2, WORLD_W - TILE * 2);
-        y = clamp(player.y + Math.sin(ang) * d, TILE * 2, WORLD_H - TILE * 2);
+        const d = rng(450, 780);
+        x = clamp(player.x + Math.cos(ang) * d, TILE * 2.5, WORLD_W - TILE * 2.5);
+        y = clamp(player.y + Math.sin(ang) * d, TILE * 2.5, WORLD_H - TILE * 2.5);
         tries++;
-    } while (isWall(x, y) && tries < 40);
+    } while (isWallBox(x, y, rad + 4) && tries < 60);
+
+    // If still in wall after 60 tries, scan open floor tiles with distance
+    if (isWallBox(x, y, rad + 4)) {
+        for (let r = 4; r < MAP_ROWS - 4; r += 2) {
+            for (let c = 4; c < MAP_COLS - 4; c += 2) {
+                const tx = c * TILE + TILE / 2;
+                const ty = r * TILE + TILE / 2;
+                if (!isWallBox(tx, ty, rad + 4) && dist({ x: tx, y: ty }, player) > 320) {
+                    return { x: tx, y: ty };
+                }
+            }
+        }
+    }
     return { x, y };
 }
 
@@ -1619,7 +1727,7 @@ function updateWave(dt) {
         if (wave.spawnTimer <= 0) {
             wave.spawnTimer = wave.spawnInterval * Math.max(0.35, 1 - wave.number * 0.04);
             const type = wave.toSpawn.shift();
-            const pos = getSpawnPos();
+            const pos = getSpawnPos(type);
             spawnEnemy(type, pos.x, pos.y);
         }
     }
@@ -1756,15 +1864,141 @@ function drawHUD() {
     ctx.restore();
 
 
-    // ── 2. Top-Right: WAVE and KILLS (Clean Bold Typography) ──
-    ctx.fillStyle = '#ffffff';
-    ctx.font = '900 24px "Segoe UI", sans-serif';
-    ctx.textAlign = 'right';
-    ctx.fillText(`WAVE ${String(wave.number).padStart(2, '0')}`, BASE_W - 24, 38);
+    // ── 2. Top-Right: Minimap & Tactical Radar ──
+    const mmW = 148, mmH = 106;
+    const mmX = BASE_W - mmW - 20;
+    const mmY = 16;
 
-    ctx.font = '800 16px "Segoe UI", sans-serif';
-    ctx.fillStyle = '#e4e7eb';
-    ctx.fillText(`KILLS: ${wave.kills}`, BASE_W - 24, 62);
+    // Minimap Background Panel
+    ctx.save();
+    ctx.fillStyle = 'rgba(16, 20, 28, 0.92)';
+    ctx.strokeStyle = '#3e495c';
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.roundRect(mmX, mmY, mmW, mmH, 8);
+    ctx.fill(); ctx.stroke();
+
+    // Clip to minimap interior
+    ctx.save();
+    ctx.beginPath();
+    ctx.roundRect(mmX + 1, mmY + 1, mmW - 2, mmH - 2, 7);
+    ctx.clip();
+
+    // Draw cached dungeon wall map
+    if (miniMapCanvas) {
+        ctx.drawImage(miniMapCanvas, mmX, mmY, mmW, mmH);
+    }
+
+    // Draw Camera Viewport Box on Minimap
+    const camVX = mmX + (camera.x / WORLD_W) * mmW;
+    const camVY = mmY + (camera.y / WORLD_H) * mmH;
+    const camVW = (BASE_W / WORLD_W) * mmW;
+    const camVH = (BASE_H / WORLD_H) * mmH;
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.55)';
+    ctx.lineWidth = 1.4;
+    ctx.strokeRect(camVX, camVY, camVW, camVH);
+
+    // Draw Enemies on Minimap
+    for (const e of enemies) {
+        if (e.dead) continue;
+        const ex = mmX + (e.x / WORLD_W) * mmW;
+        const ey = mmY + (e.y / WORLD_H) * mmH;
+        const dotR = e.type === 'golem' ? 3.5 : 2.5;
+        const dotColor = e.type === 'wraith' ? '#a29bfe' : e.type === 'golem' ? '#ffa502' : '#ff4757';
+        
+        ctx.fillStyle = dotColor;
+        ctx.beginPath();
+        ctx.arc(ex, ey, dotR, 0, Math.PI * 2);
+        ctx.fill();
+    }
+
+    // Draw Player on Minimap
+    const px = mmX + (player.x / WORLD_W) * mmW;
+    const py = mmY + (player.y / WORLD_H) * mmH;
+    
+    // Player pulsing dot
+    ctx.fillStyle = '#f1c40f';
+    ctx.beginPath();
+    ctx.arc(px, py, 3.2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    // Player heading line on minimap
+    ctx.strokeStyle = '#f1c40f';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(px, py);
+    ctx.lineTo(px + Math.cos(player.angle) * 6, py + Math.sin(player.angle) * 6);
+    ctx.stroke();
+
+    ctx.restore(); // end clip
+
+    // Radar title
+    ctx.fillStyle = '#8395a7';
+    ctx.font = '800 9px "Segoe UI", sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText('RADAR', mmX + 6, mmY + 12);
+    ctx.restore();
+
+    // ── Wave, Kills, and Remaining Enemy Counters (Left of Minimap) ──
+    const textRightX = mmX - 16;
+    ctx.fillStyle = '#ffffff';
+    ctx.font = '900 22px "Segoe UI", sans-serif';
+    ctx.textAlign = 'right';
+    ctx.fillText(`WAVE ${String(wave.number).padStart(2, '0')}`, textRightX, 38);
+
+    ctx.font = '800 14px "Segoe UI", sans-serif';
+    ctx.fillStyle = '#c8d6e5';
+    ctx.fillText(`KILLS: ${wave.kills}`, textRightX, 58);
+
+    const aliveCount = enemies.filter(e => !e.dead).length;
+    ctx.fillStyle = aliveCount > 0 ? '#ff6b6b' : '#1dd1a1';
+    ctx.font = '800 13px "Segoe UI", sans-serif';
+    ctx.fillText(`MUSUH: ${aliveCount}`, textRightX, 78);
+
+    // ── Off-screen Enemy Pointers (Radar Edge Arrows) ──
+    for (const e of enemies) {
+        if (e.dead) continue;
+        const isOffScreen = e.x < camera.x || e.x > camera.x + BASE_W || e.y < camera.y || e.y > camera.y + BASE_H;
+        if (!isOffScreen) continue;
+
+        // Calculate vector from camera center to enemy
+        const screenCenterX = BASE_W / 2;
+        const screenCenterY = BASE_H / 2;
+        const dx = e.x - (camera.x + screenCenterX);
+        const dy = e.y - (camera.y + screenCenterY);
+        const ang = Math.atan2(dy, dx);
+
+        // Intersect ray with screen edge margins
+        const pad = 24;
+        const halfW = (BASE_W / 2) - pad;
+        const halfH = (BASE_H / 2) - pad;
+        const rayScale = Math.min(
+            Math.abs(halfW / Math.cos(ang)),
+            Math.abs(halfH / Math.sin(ang))
+        );
+
+        const arrowX = screenCenterX + Math.cos(ang) * rayScale;
+        const arrowY = screenCenterY + Math.sin(ang) * rayScale;
+
+        // Draw clean chevron arrow pointing to offscreen enemy
+        ctx.save();
+        ctx.translate(arrowX, arrowY);
+        ctx.rotate(ang);
+        ctx.fillStyle = '#ff4757';
+        ctx.strokeStyle = '#181b22';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(7, 0);
+        ctx.lineTo(-6, -6);
+        ctx.lineTo(-3, 0);
+        ctx.lineTo(-6, 6);
+        ctx.closePath();
+        ctx.fill(); ctx.stroke();
+        ctx.restore();
+    }
 
 
     // ── 3. Bottom-Center: Hotbar (Keys 1-4) & Spell Queue ──
