@@ -26,9 +26,12 @@ const player = {
 // ─── Player Damage ───────────────────────────────────────────
 function damagePlayer(amount) {
     player.hp -= amount;
-    player.invincible = 0.55;
+    player.invincible = 0.50;
+    if (typeof spawnFloat === 'function') {
+        spawnFloat(player.x, player.y - player.bodyRadius, `-${Math.round(amount)}`, '#ff3838', 1.25);
+    }
     spawnBurst(player.x, player.y, '#ff3838', 14, 110, 5, 0.45);
-    doShake(5.5, 0.22);
+    doShake(6.5, 0.25);
     if (player.hp <= 0) {
         player.hp = 0;
         gameState = 'dead';

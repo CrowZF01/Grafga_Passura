@@ -9,27 +9,27 @@ let enemyIdCounter = 0;
 
 const ENEMY_TYPES = {
     goblin: {
-        name: 'Goblin', hp: 65, speed: 85, damage: 9, radius: 14,
+        name: 'Goblin', hp: 65, speed: 85, damage: 16, radius: 14,
         color: '#6bb343', darkColor: '#4d8a2f',
         xpValue: 5, drawFn: drawGoblin
     },
     skeleton: {
-        name: 'Skeleton', hp: 50, speed: 105, damage: 7, radius: 13,
+        name: 'Skeleton', hp: 50, speed: 105, damage: 14, radius: 13,
         color: '#e4e7eb', darkColor: '#2c3e50',
         xpValue: 4, drawFn: drawSkeleton
     },
     golem: {
-        name: 'Golem', hp: 220, speed: 50, damage: 22, radius: 22,
+        name: 'Golem', hp: 220, speed: 50, damage: 38, radius: 22,
         color: '#576574', darkColor: '#222f3e',
         xpValue: 20, drawFn: drawGolem
     },
     wizard: {
-        name: 'Wizard', hp: 85, speed: 60, damage: 12, radius: 14,
+        name: 'Wizard', hp: 85, speed: 60, damage: 22, radius: 14,
         color: '#8e44ad', darkColor: '#5b2c6f',
         xpValue: 15, drawFn: drawWizardEnemy, ranged: true, shootCd: 0, shootRate: 2.3
     },
     wraith: {
-        name: 'Wraith', hp: 60, speed: 125, damage: 13, radius: 12,
+        name: 'Wraith', hp: 60, speed: 125, damage: 24, radius: 12,
         color: '#9b59b6', darkColor: '#4a235a',
         xpValue: 10, drawFn: drawWraith, phaseTimer: 0
     },
@@ -37,9 +37,12 @@ const ENEMY_TYPES = {
 
 function spawnEnemy(type, x, y) {
     const t = ENEMY_TYPES[type];
+    const waveDmgMult = (typeof wave !== 'undefined' && wave.number > 1) ? (1 + (wave.number - 1) * 0.08) : 1;
+    const finalDamage = Math.round(t.damage * waveDmgMult);
     const e = {
         id: enemyIdCounter++,
         type, ...t,
+        damage: finalDamage,
         x, y,
         hp: t.hp, maxHp: t.hp,
         angle: 0,
@@ -501,7 +504,7 @@ function updateEnemies(dt) {
             wallSlide(e, nx, ny, e.radius);
 
             if (dist(e, player) < player.bodyRadius + e.radius + 3 && player.invincible <= 0) {
-                damagePlayer(e.damage * dt * 2.2);
+                damagePlayer(e.damage);
             }
         }
 
