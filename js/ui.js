@@ -287,7 +287,7 @@ function drawHUD() {
     // ── 3. Bottom-Center: Hotbar (Keys 1-4) & Spell Queue ──
     const btnSize = 48, btnGap = 8;
     const totalEl = 4;
-    const totalQueueSlots = 5;
+    const totalQueueSlots = 3;
 
     const elBarW = totalEl * (btnSize + btnGap) - btnGap;
     const qBarW = totalQueueSlots * (btnSize + btnGap) - btnGap;
