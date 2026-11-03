@@ -6,7 +6,24 @@
 function drawHUD() {
     ctx.save();
 
-    // ── 1. Top-Left: Avatar Portrait & HP / Mana Bars ──
+    // ── 0. Vampire Survivors Top-Screen XP Bar ──
+    const topXpPct = clamp((player.xp || 0) / (player.nextXp || 20), 0, 1);
+    ctx.fillStyle = 'rgba(20, 24, 34, 0.9)';
+    ctx.fillRect(0, 0, BASE_W, 7);
+
+    // Green emerald progress fill
+    ctx.fillStyle = '#2ecc71';
+    ctx.fillRect(0, 0, BASE_W * topXpPct, 6);
+
+    // Golden glint highlight at front of progress bar
+    if (topXpPct > 0 && topXpPct < 1) {
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(BASE_W * topXpPct - 2, 0, 2, 6);
+    }
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.15)';
+    ctx.fillRect(0, 6, BASE_W, 1);
+
+    // ── 1. Top-Left: Avatar Portrait & HP / Mana / XP Bars ──
     const avatarX = 40, avatarY = 40, avatarR = 24;
 
     // HP Capsule Bar
@@ -49,6 +66,25 @@ function drawHUD() {
     ctx.roundRect(manaX, manaY, manaW, manaH, 7);
     ctx.stroke();
 
+    // XP Mini-Bar under Mana
+    const xpX = manaX, xpY = manaY + manaH + 5, xpW = 125, xpH = 8;
+    ctx.fillStyle = '#1c1f26';
+    ctx.beginPath();
+    ctx.roundRect(xpX, xpY, xpW, xpH, 4);
+    ctx.fill();
+
+    const xpPct = clamp((player.xp || 0) / (player.nextXp || 20), 0, 1);
+    ctx.fillStyle = '#2ecc71';
+    ctx.beginPath();
+    ctx.roundRect(xpX, xpY, xpW * xpPct, xpH, 4);
+    ctx.fill();
+
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    ctx.roundRect(xpX, xpY, xpW, xpH, 4);
+    ctx.stroke();
+
     // Circular Avatar Frame with Red Hooded Mage inside
     ctx.fillStyle = '#1c1f26';
     ctx.beginPath();
@@ -81,6 +117,24 @@ function drawHUD() {
     ctx.arc(avatarX + 3, avatarY + 1, 2, 0, Math.PI * 2);
     ctx.fill();
     ctx.restore();
+
+    // Golden Level Badge at Avatar Bottom
+    const badgeW = 44, badgeH = 15;
+    const badgeX = avatarX - badgeW / 2;
+    const badgeY = avatarY + avatarR - 5;
+
+    ctx.fillStyle = '#f1c40f';
+    ctx.strokeStyle = '#181b22';
+    ctx.lineWidth = 2.0;
+    ctx.beginPath();
+    ctx.roundRect(badgeX, badgeY, badgeW, badgeH, 7);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.fillStyle = '#181b22';
+    ctx.font = '900 9.5px "Segoe UI", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(`LV. ${player.level || 1}`, avatarX, badgeY + 11);
 
 
     // ── 2. Top-Right: Minimap & Tactical Radar ──
@@ -129,6 +183,16 @@ function drawHUD() {
         ctx.beginPath();
         ctx.arc(ex, ey, dotR, 0, Math.PI * 2);
         ctx.fill();
+    }
+
+    // Draw XP Gems on Minimap (Tiny soft green dots)
+    if (typeof xpGems !== 'undefined') {
+        ctx.fillStyle = '#2ecc71';
+        for (const g of xpGems) {
+            const gx = mmX + (g.x / WORLD_W) * mmW;
+            const gy = mmY + (g.y / WORLD_H) * mmH;
+            ctx.fillRect(gx - 1, gy - 1, 2, 2);
+        }
     }
 
     // Draw Player on Minimap

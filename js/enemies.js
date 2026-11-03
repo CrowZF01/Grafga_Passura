@@ -415,6 +415,10 @@ function killEnemy(e) {
     spawnBurst(e.x, e.y, e.color, 18, 140, 5, 0.55);
     spawnBurst(e.x, e.y, '#ffffff', 8, 90, 3, 0.35);
     doShake(2.5, 0.12);
+    // Spawn XP Gem drop at enemy position
+    if (typeof spawnXpGem === 'function') {
+        spawnXpGem(e.x, e.y, e.xpValue || 5);
+    }
 }
 
 // ─── Enemy Updates & AI ──────────────────────────────────────

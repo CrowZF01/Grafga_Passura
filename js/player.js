@@ -21,6 +21,10 @@ const player = {
     bodyRadius: 15,
     walkPhase: 0,
     isMoving: false,
+    level: 1,
+    xp: 0,
+    nextXp: 20,
+    pickupRadius: 105,
 };
 
 // ─── Player Damage ───────────────────────────────────────────

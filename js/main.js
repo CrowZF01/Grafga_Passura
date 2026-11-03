@@ -8,11 +8,18 @@ function startGame() {
     generateMap();
     player.x = WORLD_W / 2;
     player.y = WORLD_H / 2;
+    player.maxHp = 100;
+    player.maxMana = 100;
+    player.manaRegen = 10;
     player.hp = player.maxHp;
     player.mana = player.maxMana;
     player.queue = [];
     player.castCooldown = 0;
     player.invincible = 0;
+    player.level = 1;
+    player.xp = 0;
+    player.nextXp = 20;
+    player.pickupRadius = 105;
 
     camera.x = player.x - BASE_W / 2;
     camera.y = player.y - BASE_H / 2;
@@ -24,6 +31,7 @@ function startGame() {
     floats.length = 0;
     lightningFlashes.length = 0;
     enemyProjectiles.length = 0;
+    if (typeof xpGems !== 'undefined') xpGems.length = 0;
 
     wave.number = 0;
     wave.kills = 0;
@@ -79,6 +87,7 @@ function loop(now) {
     updatePlayer(dt);
     camera.update(dt);
     updateEnemies(dt);
+    if (typeof updateXpGems === 'function') updateXpGems(dt);
     updateSpells(dt);
     updateEnemyProjectiles(dt);
     updateParticles(dt);
@@ -92,6 +101,7 @@ function loop(now) {
 
     drawMap();
     drawPuddles();
+    if (typeof drawXpGems === 'function') drawXpGems();
     drawParticles();
     drawEnemyProjectiles();
     drawSpells();
