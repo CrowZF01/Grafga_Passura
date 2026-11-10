@@ -455,6 +455,31 @@ function drawQueueAbovePlayer() {
 
         ctx.restore();
     }
+
+    // In-world Cooldown indicator floating above elements queue
+    if (typeof getSpellKey === 'function' && typeof getSpellCooldown === 'function') {
+        const key = getSpellKey(p.queue);
+        const cd = key ? getSpellCooldown(key) : 0;
+        if (cd > 0) {
+            const badgeW = 66, badgeH = 17;
+            const badgeX = p.x - badgeW / 2;
+            const badgeY = baseY - 24;
+
+            ctx.save();
+            ctx.fillStyle = 'rgba(231, 76, 60, 0.95)';
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.roundRect(badgeX, badgeY, badgeW, badgeH, 5);
+            ctx.fill(); ctx.stroke();
+
+            ctx.fillStyle = '#ffffff';
+            ctx.font = '900 9.5px "Segoe UI", sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText(`⏳ ${cd.toFixed(1)}s`, p.x, badgeY + 12);
+            ctx.restore();
+        }
+    }
 }
 
 // ─── Vector Icon Renderer for Elements ───────────────────────

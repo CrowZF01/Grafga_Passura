@@ -528,6 +528,11 @@ function drawHUD() {
     }
 
     // ── Queue Slots (Shows current crafted elements) ──
+    const spellKey = typeof getSpellKey === 'function' ? getSpellKey(player.queue) : null;
+    const spell = spellKey && typeof RECIPES !== 'undefined' ? RECIPES[spellKey] : (typeof getSpell === 'function' ? getSpell(player.queue) : null);
+    const currentCd = (spellKey && typeof getSpellCooldown === 'function') ? getSpellCooldown(spellKey) : 0;
+    const maxCd = (spellKey && typeof getSpellMaxCooldown === 'function') ? getSpellMaxCooldown(spellKey) : 4.0;
+
     const queueStartX = startBarX + elBarW + 26;
     for (let i = 0; i < totalQueueSlots; i++) {
         const qx = queueStartX + i * (btnSize + btnGap);
@@ -536,14 +541,15 @@ function drawHUD() {
 
         if (queuedKey) {
             const el = ELEMENTS[queuedKey];
-            ctx.fillStyle = el.color + '33';
-            ctx.strokeStyle = el.color;
+            const isRecipeOnCd = currentCd > 0;
+            ctx.fillStyle = isRecipeOnCd ? 'rgba(231, 76, 60, 0.25)' : el.color + '33';
+            ctx.strokeStyle = isRecipeOnCd ? '#ff4757' : el.color;
             ctx.lineWidth = 2.5;
             ctx.beginPath();
             ctx.roundRect(qx, qy, btnSize, btnSize, 8);
             ctx.fill(); ctx.stroke();
 
-            ctx.fillStyle = '#ffffff';
+            ctx.fillStyle = isRecipeOnCd ? '#ff7675' : '#ffffff';
             ctx.font = '900 18px "Segoe UI", sans-serif';
             ctx.textAlign = 'center';
             ctx.fillText(el.key, qx + btnSize / 2, qy + btnSize / 2 + 6);
@@ -557,21 +563,50 @@ function drawHUD() {
         }
     }
 
-    // ── Active Spell Preview Tooltip ──
-    const spell = getSpell(player.queue);
+    // ── Active Spell Preview Tooltip & Cooldown Indicator ──
     if (spell) {
-        ctx.fillStyle = 'rgba(20, 23, 31, 0.95)';
-        ctx.strokeStyle = '#ff793f';
-        ctx.lineWidth = 1.5;
-        ctx.beginPath();
-        ctx.roundRect(BASE_W / 2 - 180, barY - 44, 360, 26, 6);
-        ctx.fill(); ctx.stroke();
+        const tipW = 430, tipH = 28;
+        const tipX = (BASE_W - tipW) / 2;
+        const tipY = barY - 44;
 
-        ctx.fillStyle = '#f1c40f';
-        ctx.font = '800 12px "Segoe UI", sans-serif';
-        ctx.textAlign = 'center';
-        ctx.fillText(`✨ ${spell.name}  —  ${spell.desc}`, BASE_W / 2, barY - 27);
+        if (currentCd > 0) {
+            // Cooldown warning state
+            ctx.fillStyle = 'rgba(28, 14, 18, 0.96)';
+            ctx.strokeStyle = '#ff4757';
+            ctx.lineWidth = 2.0;
+            ctx.beginPath();
+            ctx.roundRect(tipX, tipY, tipW, tipH, 7);
+            ctx.fill(); ctx.stroke();
+
+            // Depleting cooldown progress bar
+            const cdPct = clamp(currentCd / maxCd, 0, 1);
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.12)';
+            ctx.fillRect(tipX + 4, tipY + tipH - 4, tipW - 8, 2.5);
+            ctx.fillStyle = '#ff4757';
+            ctx.fillRect(tipX + 4, tipY + tipH - 4, (tipW - 8) * cdPct, 2.5);
+
+            ctx.fillStyle = '#ff6b6b';
+            ctx.font = '900 11.5px "Segoe UI", sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText(`⏳ [COOLDOWN ${currentCd.toFixed(1)}s]  ${spell.name}  —  Rotasi ke resep lain!`, BASE_W / 2, tipY + 16);
+        } else {
+            // Ready / Siap state
+            ctx.fillStyle = 'rgba(16, 26, 20, 0.95)';
+            ctx.strokeStyle = '#2ed573';
+            ctx.lineWidth = 1.8;
+            ctx.beginPath();
+            ctx.roundRect(tipX, tipY, tipW, tipH, 7);
+            ctx.fill(); ctx.stroke();
+
+            ctx.fillStyle = '#2ed573';
+            ctx.font = '800 11.5px "Segoe UI", sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText(`✨ [SIAP] ${spell.name}  —  ${spell.desc}`, BASE_W / 2, tipY + 17);
+        }
     }
+
+    // ── Active Recipe Cooldown Rotation Tracker Badges ──
+    drawSpellCooldownHUD(barY, !!spell);
 
     // ── Controls Hint Text (Bottom-most) ──
     ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
@@ -650,6 +685,117 @@ function drawHUD() {
     }
 
     ctx.restore();
+}
+
+// ─── Spell Cooldowns HUD Indicator (Recipe Rotation Tracker) ─
+function drawSpellCooldownHUD(barY, hasQueueTooltip) {
+    if (typeof spellCooldowns === 'undefined') return;
+
+    const items = [];
+
+    // 1. Spells currently cooling down (Tier 2 & 3 recipes with maxCd >= 1s)
+    for (const [key, timer] of spellCooldowns) {
+        if (timer <= 0.05) continue;
+        const spell = typeof RECIPES !== 'undefined' ? RECIPES[key] : null;
+        const maxCd = typeof getSpellMaxCooldown === 'function' ? getSpellMaxCooldown(key) : 4.0;
+        if (spell && maxCd >= 1.0) {
+            items.push({
+                key,
+                name: spell.name,
+                color: spell.color || '#ff4757',
+                timer,
+                maxCd,
+                isReady: false
+            });
+        }
+    }
+
+    // 2. Recently ready spells (flashing green reward)
+    if (typeof recentReadySpells !== 'undefined') {
+        for (const [key, f] of recentReadySpells) {
+            if (items.some(it => it.key === key)) continue;
+            const spell = typeof RECIPES !== 'undefined' ? RECIPES[key] : null;
+            if (spell) {
+                items.push({
+                    key,
+                    name: spell.name,
+                    color: spell.color || '#2ed573',
+                    timer: 0,
+                    maxCd: 1,
+                    flashTimer: f,
+                    isReady: true
+                });
+            }
+        }
+    }
+
+    if (!items.length) return;
+
+    // Show up to 4 rotated recipes side-by-side
+    const displayItems = items.slice(0, 4);
+    const badgeW = 124;
+    const badgeH = 26;
+    const badgeGap = 8;
+    const totalW = displayItems.length * (badgeW + badgeGap) - badgeGap;
+    const startX = (BASE_W - totalW) / 2;
+    const badgeY = hasQueueTooltip ? (barY - 78) : (barY - 44);
+
+    for (let i = 0; i < displayItems.length; i++) {
+        const item = displayItems[i];
+        const bx = startX + i * (badgeW + badgeGap);
+        const by = badgeY;
+
+        ctx.save();
+        if (item.isReady) {
+            // Flash Green Ready Badge
+            ctx.fillStyle = 'rgba(16, 38, 24, 0.95)';
+            ctx.strokeStyle = '#2ed573';
+            ctx.lineWidth = 2.0;
+            ctx.beginPath();
+            ctx.roundRect(bx, by, badgeW, badgeH, 6);
+            ctx.fill(); ctx.stroke();
+
+            ctx.fillStyle = '#2ed573';
+            ctx.font = '900 11px "Segoe UI", sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText(`✨ ${item.name} SIAP!`, bx + badgeW / 2, by + 17);
+        } else {
+            // Active Cooldown Badge
+            ctx.fillStyle = 'rgba(18, 22, 30, 0.94)';
+            ctx.strokeStyle = item.color;
+            ctx.lineWidth = 1.8;
+            ctx.beginPath();
+            ctx.roundRect(bx, by, badgeW, badgeH, 6);
+            ctx.fill(); ctx.stroke();
+
+            // Depleting Cooldown Bar
+            const pct = clamp(item.timer / item.maxCd, 0, 1);
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.12)';
+            ctx.fillRect(bx + 4, by + badgeH - 4, badgeW - 8, 2.5);
+            ctx.fillStyle = item.color;
+            ctx.fillRect(bx + 4, by + badgeH - 4, (badgeW - 8) * pct, 2.5);
+
+            // Left mini element color orb
+            ctx.fillStyle = item.color;
+            ctx.beginPath();
+            ctx.arc(bx + 11, by + 11, 4, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Recipe Name
+            ctx.fillStyle = '#ffffff';
+            ctx.font = '800 10.5px "Segoe UI", sans-serif';
+            ctx.textAlign = 'left';
+            const shortName = item.name.length > 9 ? item.name.slice(0, 9) + '..' : item.name;
+            ctx.fillText(shortName, bx + 19, by + 15);
+
+            // Countdown Timer
+            ctx.fillStyle = '#ffa502';
+            ctx.font = '900 11px "Segoe UI", sans-serif';
+            ctx.textAlign = 'right';
+            ctx.fillText(`${item.timer.toFixed(1)}s`, bx + badgeW - 6, by + 15);
+        }
+        ctx.restore();
+    }
 }
 
 // ─── Screen Overlays (Start, Dead, Pause) ─────────────────────

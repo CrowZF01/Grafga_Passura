@@ -284,10 +284,63 @@ const RECIPES = {
     },
 };
 
-function getSpell(queue) {
+// ─── Recipe Cooldown Specifications ──────────────────────────
+// Tier 1: Hampir tanpa cooldown (~0.35s, selaras animasi tongkat)
+// Tier 2: Cooldown menengah (~1.8s - 2.2s)
+// Tier 3: Resep Dahsyat seperti Meteor (±4.0s), memaksa rotasi 3-4 resep
+const RECIPE_COOLDOWNS = {
+    // Tier 1 (Single Element - Fast spammable basic attacks)
+    '1': 0.35, '2': 0.35, '3': 0.35, '4': 0.35,
+
+    // Tier 2 (Two Elements - Tactical combos)
+    '11': 2.0, '12': 1.8, '13': 2.0, '14': 2.0,
+    '22': 2.2, '23': 1.8, '24': 2.0, '33': 2.2,
+    '34': 2.0, '44': 2.2,
+
+    // Tier 3 (Three Elements - Devastating nukes, ~4.0s)
+    '111': 4.0, '112': 3.8, '113': 4.0, '114': 4.0,
+    '122': 3.8, '123': 3.8, '124': 3.8, '133': 4.0,
+    '134': 4.0, '144': 3.8, '222': 4.2, '223': 3.8,
+    '224': 4.0, '233': 4.0, '234': 3.8, '244': 4.5,
+    '333': 4.2, '334': 4.2, '344': 4.0, '444': 4.5,
+};
+
+for (const k in RECIPES) {
+    RECIPES[k].key = k;
+    RECIPES[k].cooldown = RECIPE_COOLDOWNS[k] || (k.length === 1 ? 0.35 : k.length === 2 ? 2.0 : 4.0);
+}
+
+function getSpellKey(queue) {
     if (!queue || !queue.length) return null;
-    const key = [...queue].sort().join('');
-    return RECIPES[key] || RECIPES[queue[0]] || null;
+    const sortedKey = [...queue].sort().join('');
+    if (RECIPES[sortedKey]) return sortedKey;
+    if (RECIPES[queue[0]]) return queue[0];
+    return null;
+}
+
+function getSpell(queue) {
+    const key = getSpellKey(queue);
+    return key ? RECIPES[key] : null;
+}
+
+function getRecipeCooldown(key, spell) {
+    if (spell && typeof spell.cooldown === 'number') return spell.cooldown;
+    if (key && typeof RECIPE_COOLDOWNS[key] === 'number') return RECIPE_COOLDOWNS[key];
+    if (!key) return 0;
+    return key.length === 1 ? 0.35 : key.length === 2 ? 2.0 : 4.0;
+}
+
+// ─── Recipe Cooldown System (Map: recipeKey -> remaining seconds) ─
+const spellCooldowns = new Map();
+const spellCooldownMax = new Map();
+const recentReadySpells = new Map();
+
+function getSpellCooldown(key) {
+    return spellCooldowns.get(key) || 0;
+}
+
+function getSpellMaxCooldown(key) {
+    return spellCooldownMax.get(key) || getRecipeCooldown(key, RECIPES[key]);
 }
 
 // ─── Ground Hazard Puddles ──────────────────────────────────
@@ -355,8 +408,19 @@ const spells = [];
 
 function castSpell(type) {
     if (!player.queue.length) return;
-    const spell = getSpell(player.queue);
+    const key = getSpellKey(player.queue);
+    const spell = key ? RECIPES[key] : null;
     if (!spell) { player.queue = []; return; }
+
+    // ── Check Recipe Cooldown (Map: key -> timer) ──
+    const currentCd = spellCooldowns.get(key) || 0;
+    if (currentCd > 0) {
+        if (typeof spawnFloat === 'function') {
+            spawnFloat(player.x, player.y - 32, `⏳ ${spell.name} Cooldown (${currentCd.toFixed(1)}s)`, '#ffa502', 0.85);
+        }
+        if (typeof doShake === 'function') doShake(1.5, 0.05);
+        return;
+    }
 
     const manaCost = 10 + player.queue.length * 6;
     if (player.mana < manaCost) {
@@ -366,6 +430,13 @@ function castSpell(type) {
     player.mana -= manaCost;
 
     executeSpell(spell, type);
+
+    // ── Apply Recipe Cooldown into Map ──
+    const cd = getRecipeCooldown(key, spell);
+    if (cd > 0) {
+        spellCooldowns.set(key, cd);
+        spellCooldownMax.set(key, cd);
+    }
 
     player.queue = [];
     player.castCooldown = player.castCooldownMax;
@@ -1013,6 +1084,27 @@ function executeSpell(spell, castType) {
 // ─── Update Spells Loop ──────────────────────────────────────
 function updateSpells(dt) {
     updatePuddles(dt);
+
+    // ── Update Recipe Cooldowns (Map: key -> timer) ──
+    for (const [key, timer] of spellCooldowns) {
+        const nextTimer = timer - dt;
+        if (nextTimer <= 0) {
+            spellCooldowns.delete(key);
+            const maxCd = spellCooldownMax.get(key) || 0;
+            if (maxCd >= 1.0) {
+                recentReadySpells.set(key, 0.9);
+            }
+        } else {
+            spellCooldowns.set(key, nextTimer);
+        }
+    }
+
+    // ── Update Ready Flash Badges ──
+    for (const [key, f] of recentReadySpells) {
+        const nextF = f - dt;
+        if (nextF <= 0) recentReadySpells.delete(key);
+        else recentReadySpells.set(key, nextF);
+    }
 
     for (let i = spells.length - 1; i >= 0; i--) {
         const s = spells[i];

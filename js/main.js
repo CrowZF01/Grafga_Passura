@@ -45,6 +45,9 @@ function startGame() {
     if (typeof scrolls !== 'undefined') scrolls.length = 0;
     if (typeof enemyHazards !== 'undefined') enemyHazards.length = 0;
     if (typeof activeUnlockBanner !== 'undefined') activeUnlockBanner = null;
+    if (typeof spellCooldowns !== 'undefined') spellCooldowns.clear();
+    if (typeof spellCooldownMax !== 'undefined') spellCooldownMax.clear();
+    if (typeof recentReadySpells !== 'undefined') recentReadySpells.clear();
 
     wave.number = 0;
     wave.kills = 0;
