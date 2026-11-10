@@ -1,6 +1,6 @@
 // ============================================================
 //  PASSURA: Elemental Arena — js/enemies.js
-//  Enemy Types, Custom Procedural Sprites, AI & Projectiles
+//  Enemy Types, Bosses, Custom Sprites, AI, Projectiles & Hazards
 // ============================================================
 
 // ─── Enemy State & Definitions ───────────────────────────────
@@ -33,12 +33,33 @@ const ENEMY_TYPES = {
         color: '#9b59b6', darkColor: '#4a235a',
         xpValue: 10, drawFn: drawWraith, phaseTimer: 0
     },
+
+    // ── Boss Types (Wave 5, 10, 15) ──
+    boss_water: {
+        name: 'Aqua Overlord', hp: 850, speed: 52, damage: 20, radius: 34,
+        color: '#0984e3', darkColor: '#0c2461', glow: '#74b9ff',
+        xpValue: 120, drawFn: drawAquaBoss, isBoss: true, bossElement: '2',
+        title: 'Penguasa Samudra (Wave 5 Boss)'
+    },
+    boss_earth: {
+        name: 'Terra Titan', hp: 1800, speed: 42, damage: 32, radius: 40,
+        color: '#b7791f', darkColor: '#78350f', glow: '#d69e2e',
+        xpValue: 240, drawFn: drawTerraBoss, isBoss: true, bossElement: '3',
+        title: 'Raksasa Granit (Wave 10 Boss)'
+    },
+    boss_lightning: {
+        name: 'Volt Archon', hp: 3200, speed: 70, damage: 34, radius: 32,
+        color: '#9b59b6', darkColor: '#6c5ce7', glow: '#a29bfe',
+        xpValue: 400, drawFn: drawVoltBoss, isBoss: true, bossElement: '4',
+        title: 'Dewa Badai Halilintar (Wave 15 Boss)'
+    },
 };
 
 function spawnEnemy(type, x, y) {
     const t = ENEMY_TYPES[type];
+    if (!t) return null;
     const waveDmgMult = (typeof wave !== 'undefined' && wave.number > 1) ? (1 + (wave.number - 1) * 0.08) : 1;
-    const finalDamage = Math.round(t.damage * waveDmgMult);
+    const finalDamage = Math.round(t.damage * (t.isBoss ? 1 : waveDmgMult));
     const e = {
         id: enemyIdCounter++,
         type, ...t,
@@ -61,6 +82,9 @@ function spawnEnemy(type, x, y) {
         stuckTimer: 0,
         steerTimer: 0,
         steerAngle: 0,
+        // Boss timers
+        bossSkillTimer: 2.2,
+        bossSkillIndex: 0,
     };
     enemies.push(e);
     return e;
@@ -95,11 +119,9 @@ function drawGoblin(e) {
 
     // Legs
     ctx.fillStyle = skinColor;
-    // Left leg
     ctx.beginPath();
     ctx.roundRect(-7, e.radius * 0.3 + legSwing, 5, 8, 2);
     ctx.fill(); ctx.stroke();
-    // Right leg
     ctx.beginPath();
     ctx.roundRect(2, e.radius * 0.3 - legSwing, 5, 8, 2);
     ctx.fill(); ctx.stroke();
@@ -118,22 +140,21 @@ function drawGoblin(e) {
     ctx.ellipse(0, 0, e.radius * 0.7, e.radius * 0.65, 0, 0, Math.PI * 2);
     ctx.fill(); ctx.stroke();
 
-    // Brown Loincloth / Shorts
+    // Brown Loincloth
     ctx.fillStyle = pantsColor;
     ctx.beginPath();
     ctx.roundRect(-e.radius * 0.6, e.radius * 0.1, e.radius * 1.2, e.radius * 0.55, 3);
     ctx.fill(); ctx.stroke();
 
-    // Ears (Pointed goblin ears)
+    // Ears
     ctx.fillStyle = skinColor;
-    // Left ear
     ctx.beginPath();
     ctx.moveTo(-e.radius * 0.6, -e.radius * 0.6);
     ctx.lineTo(-e.radius * 1.3, -e.radius * 1.0);
     ctx.lineTo(-e.radius * 0.4, -e.radius * 0.9);
     ctx.closePath();
     ctx.fill(); ctx.stroke();
-    // Right ear
+
     ctx.beginPath();
     ctx.moveTo(e.radius * 0.6, -e.radius * 0.6);
     ctx.lineTo(e.radius * 1.3, -e.radius * 1.0);
@@ -141,13 +162,13 @@ function drawGoblin(e) {
     ctx.closePath();
     ctx.fill(); ctx.stroke();
 
-    // Round Goblin Head
+    // Head
     ctx.fillStyle = skinColor;
     ctx.beginPath();
     ctx.arc(0, -e.radius * 0.65, e.radius * 0.75, 0, Math.PI * 2);
     ctx.fill(); ctx.stroke();
 
-    // Eyes (Big cute cartoon black dots with white twinkle)
+    // Eyes
     if (!isHit) {
         ctx.fillStyle = '#181b22';
         ctx.beginPath();
@@ -157,7 +178,6 @@ function drawGoblin(e) {
         ctx.arc(-3.5, -e.radius * 0.65, 2.5, 0, Math.PI * 2);
         ctx.fill();
 
-        // Eye twinkle
         ctx.fillStyle = '#ffffff';
         ctx.beginPath();
         ctx.arc(4, -e.radius * 0.65 - 1, 1, 0, Math.PI * 2);
@@ -213,7 +233,7 @@ function drawSkeleton(e) {
     ctx.roundRect(e.radius * 0.6, -e.radius * 0.3 - armSwing, 3.5, 9, 2);
     ctx.fill(); ctx.stroke();
 
-    // Ribcage / Spine Body
+    // Spine Body
     ctx.fillStyle = boneColor;
     ctx.beginPath();
     ctx.roundRect(-e.radius * 0.45, -e.radius * 0.2, e.radius * 0.9, e.radius * 0.7, 3);
@@ -353,11 +373,303 @@ function drawWraith(e) {
     ctx.restore();
 }
 
+// ── Boss 1: Aqua Overlord (Wave 10 Boss - Water Element) ─────
+function drawAquaBoss(e) {
+    ctx.save();
+    ctx.translate(e.x, e.y);
+
+    // Giant Drop Shadow
+    ctx.save();
+    ctx.scale(1, 0.45);
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+    ctx.beginPath();
+    ctx.arc(0, e.radius + 10, e.radius * 1.1, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
+    // Floating water bubbles orbiting the boss
+    const time = Date.now() * 0.003;
+    for (let k = 0; k < 4; k++) {
+        const orbitA = time + (k / 4) * Math.PI * 2;
+        const ox = Math.cos(orbitA) * (e.radius + 14);
+        const oy = Math.sin(orbitA) * (e.radius + 14) * 0.6;
+        ctx.fillStyle = '#74b9ff';
+        ctx.strokeStyle = '#0984e3';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.arc(ox, oy, 4.5, 0, Math.PI * 2);
+        ctx.fill(); ctx.stroke();
+    }
+
+    ctx.rotate(e.angle);
+
+    const isHit = e.flashTimer > 0;
+    const bodyColor = isHit ? '#ffffff' : e.color;
+    const darkColor = isHit ? '#ffffff' : e.darkColor;
+
+    ctx.strokeStyle = '#181b22';
+    ctx.lineWidth = 3.0;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
+    // Aquatic Dragon / Serpent Fins (Side flippers)
+    const finWave = Math.sin(e.walkPhase * 0.8) * 4;
+    ctx.fillStyle = darkColor;
+    // Left fin
+    ctx.beginPath();
+    ctx.moveTo(-10, -e.radius * 0.7);
+    ctx.lineTo(-e.radius * 1.3, -e.radius * 1.2 + finWave);
+    ctx.lineTo(-e.radius * 0.4, -e.radius * 0.3);
+    ctx.closePath();
+    ctx.fill(); ctx.stroke();
+    // Right fin
+    ctx.beginPath();
+    ctx.moveTo(-10, e.radius * 0.7);
+    ctx.lineTo(-e.radius * 1.3, e.radius * 1.2 - finWave);
+    ctx.lineTo(-e.radius * 0.4, e.radius * 0.3);
+    ctx.closePath();
+    ctx.fill(); ctx.stroke();
+
+    // Armored Leviathan Body Shell
+    ctx.fillStyle = bodyColor;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, e.radius * 1.05, e.radius * 0.85, 0, 0, Math.PI * 2);
+    ctx.fill(); ctx.stroke();
+
+    // Crest / Crown Fins on Head
+    ctx.fillStyle = '#00cec9';
+    ctx.beginPath();
+    ctx.moveTo(e.radius * 0.3, -e.radius * 0.7);
+    ctx.lineTo(e.radius * 0.9, 0);
+    ctx.lineTo(e.radius * 0.3, e.radius * 0.7);
+    ctx.lineTo(0, 0);
+    ctx.closePath();
+    ctx.fill(); ctx.stroke();
+
+    // Ocean Rune Shell Plates
+    ctx.fillStyle = darkColor;
+    ctx.beginPath();
+    ctx.arc(-e.radius * 0.3, 0, e.radius * 0.45, 0, Math.PI * 2);
+    ctx.fill(); ctx.stroke();
+
+    // Glowing Azure Eyes
+    if (!isHit) {
+        ctx.fillStyle = '#00f2fe';
+        ctx.beginPath();
+        ctx.arc(e.radius * 0.45, -e.radius * 0.35, 4.5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(e.radius * 0.45, e.radius * 0.35, 4.5, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        ctx.arc(e.radius * 0.5, -e.radius * 0.35, 2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(e.radius * 0.5, e.radius * 0.35, 2, 0, Math.PI * 2);
+        ctx.fill();
+    }
+
+    ctx.restore();
+}
+
+// ── Boss 2: Terra Titan (Wave 20 Boss - Earth Element) ───────
+function drawTerraBoss(e) {
+    ctx.save();
+    ctx.translate(e.x, e.y);
+
+    // Heavy Drop Shadow
+    ctx.save();
+    ctx.scale(1, 0.45);
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
+    ctx.beginPath();
+    ctx.arc(0, e.radius + 12, e.radius * 1.15, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
+    ctx.rotate(e.angle);
+
+    const isHit = e.flashTimer > 0;
+    const stoneColor = isHit ? '#ffffff' : e.color;
+    const darkStone = isHit ? '#ffffff' : e.darkColor;
+
+    ctx.strokeStyle = '#181b22';
+    ctx.lineWidth = 3.2;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
+    // Massive Boulder Fists on Left & Right
+    const punchBob = Math.sin(e.walkPhase * 0.7) * 5;
+    ctx.fillStyle = darkStone;
+    // Left Fist
+    ctx.beginPath();
+    ctx.roundRect(-e.radius * 0.2, -e.radius * 1.3 + punchBob, e.radius * 0.75, e.radius * 0.65, 6);
+    ctx.fill(); ctx.stroke();
+    // Right Fist
+    ctx.beginPath();
+    ctx.roundRect(-e.radius * 0.2, e.radius * 0.7 - punchBob, e.radius * 0.75, e.radius * 0.65, 6);
+    ctx.fill(); ctx.stroke();
+
+    // Granite Angular Torso
+    ctx.fillStyle = stoneColor;
+    ctx.beginPath();
+    const pts = 8;
+    for (let i = 0; i < pts; i++) {
+        const a = (i / pts) * Math.PI * 2;
+        const rad = e.radius * (0.9 + 0.12 * Math.cos(i * 3));
+        if (i === 0) ctx.moveTo(Math.cos(a) * rad, Math.sin(a) * rad);
+        else ctx.lineTo(Math.cos(a) * rad, Math.sin(a) * rad);
+    }
+    ctx.closePath();
+    ctx.fill(); ctx.stroke();
+
+    // Glowing Golden Runic Core in Chest
+    ctx.fillStyle = '#f1c40f';
+    ctx.beginPath();
+    ctx.roundRect(-e.radius * 0.35, -e.radius * 0.35, e.radius * 0.7, e.radius * 0.7, 4);
+    ctx.fill();
+    ctx.strokeStyle = '#d69e2e';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // Glowing Molten/Amber Eye Slits
+    if (!isHit) {
+        ctx.fillStyle = '#f39c12';
+        ctx.beginPath();
+        ctx.arc(e.radius * 0.55, -e.radius * 0.3, 4, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(e.radius * 0.55, e.radius * 0.3, 4, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        ctx.arc(e.radius * 0.6, -e.radius * 0.3, 1.8, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(e.radius * 0.6, e.radius * 0.3, 1.8, 0, Math.PI * 2);
+        ctx.fill();
+    }
+
+    ctx.restore();
+}
+
+// ── Boss 3: Volt Archon (Wave 30 Boss - Lightning Element) ───
+function drawVoltBoss(e) {
+    ctx.save();
+    ctx.translate(e.x, e.y);
+
+    // Floating storm shadow
+    ctx.save();
+    ctx.scale(1, 0.45);
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.35)';
+    ctx.beginPath();
+    ctx.arc(0, e.radius + 10, e.radius, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
+    // Floating magnetic runic obelisks orbiting the boss
+    const time = Date.now() * 0.004;
+    for (let k = 0; k < 5; k++) {
+        const orbitA = time + (k / 5) * Math.PI * 2;
+        const ox = Math.cos(orbitA) * (e.radius + 16);
+        const oy = Math.sin(orbitA) * (e.radius + 16) * 0.7;
+
+        // Runic obelisk diamond
+        ctx.fillStyle = '#6c5ce7';
+        ctx.strokeStyle = '#a29bfe';
+        ctx.lineWidth = 1.6;
+        ctx.beginPath();
+        ctx.moveTo(ox, oy - 6);
+        ctx.lineTo(ox + 4, oy);
+        ctx.lineTo(ox, oy + 6);
+        ctx.lineTo(ox - 4, oy);
+        ctx.closePath();
+        ctx.fill(); ctx.stroke();
+
+        // Crackling spark between obelisks
+        if (Math.random() < 0.25) {
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 1.2;
+            ctx.beginPath();
+            ctx.moveTo(ox, oy);
+            ctx.lineTo(ox + rng(-12, 12), oy + rng(-12, 12));
+            ctx.stroke();
+        }
+    }
+
+    ctx.rotate(e.angle);
+
+    const isHit = e.flashTimer > 0;
+    const shroudColor = isHit ? '#ffffff' : e.color;
+    const darkShroud = isHit ? '#ffffff' : e.darkColor;
+
+    ctx.strokeStyle = '#181b22';
+    ctx.lineWidth = 2.8;
+
+    // Outer Storm Robe Cloak
+    ctx.fillStyle = shroudColor;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, e.radius, e.radius * 0.85, 0, 0, Math.PI * 2);
+    ctx.fill(); ctx.stroke();
+
+    // Inner Dark Void
+    ctx.fillStyle = darkShroud;
+    ctx.beginPath();
+    ctx.arc(e.radius * 0.2, 0, e.radius * 0.55, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Thunder Crest Horns
+    ctx.fillStyle = '#fdcb6e';
+    ctx.beginPath();
+    ctx.moveTo(e.radius * 0.2, -e.radius * 0.8);
+    ctx.lineTo(e.radius * 0.85, -e.radius * 0.6);
+    ctx.lineTo(e.radius * 0.4, -e.radius * 0.3);
+    ctx.closePath();
+    ctx.fill(); ctx.stroke();
+
+    ctx.beginPath();
+    ctx.moveTo(e.radius * 0.2, e.radius * 0.8);
+    ctx.lineTo(e.radius * 0.85, e.radius * 0.6);
+    ctx.lineTo(e.radius * 0.4, e.radius * 0.3);
+    ctx.closePath();
+    ctx.fill(); ctx.stroke();
+
+    // Glowing Violet / Lightning Eyes
+    if (!isHit) {
+        ctx.fillStyle = '#e056fd';
+        ctx.beginPath();
+        ctx.arc(e.radius * 0.4, -e.radius * 0.22, 3.5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(e.radius * 0.4, e.radius * 0.22, 3.5, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        ctx.arc(e.radius * 0.44, -e.radius * 0.22, 1.6, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(e.radius * 0.44, e.radius * 0.22, 1.6, 0, Math.PI * 2);
+        ctx.fill();
+    }
+
+    ctx.restore();
+}
+
 // ─── Enemy Projectiles ───────────────────────────────────────
 const enemyProjectiles = [];
 
-function spawnEnemyProjectile(x, y, angle, speed, damage, color) {
-    enemyProjectiles.push({ x, y, angle, speed, damage, color, radius: 7, life: 3.5 });
+function spawnEnemyProjectile(x, y, angle, speed, damage, color, radius = 7, extra = {}) {
+    enemyProjectiles.push({
+        x, y, angle, speed, damage, color,
+        radius,
+        life: extra.life || 3.5,
+        visual: extra.visual || 'ball', // 'ball' | 'water_jet' | 'boulder' | 'spark'
+        bounces: extra.bounces || 0,
+        spin: 0,
+    });
 }
 
 function updateEnemyProjectiles(dt) {
@@ -366,11 +678,29 @@ function updateEnemyProjectiles(dt) {
         p.x += Math.cos(p.angle) * p.speed * dt;
         p.y += Math.sin(p.angle) * p.speed * dt;
         p.life -= dt;
-        if (p.life <= 0 || isWall(p.x, p.y)) {
+        p.spin = (p.spin || 0) + dt * 5;
+
+        if (p.life <= 0) {
             spawnBurst(p.x, p.y, p.color, 6, 60, 3, 0.3);
             enemyProjectiles.splice(i, 1);
             continue;
         }
+
+        if (isWall(p.x, p.y)) {
+            if (p.bounces > 0) {
+                p.bounces--;
+                const prevX = p.x - Math.cos(p.angle) * p.speed * dt;
+                const prevY = p.y - Math.sin(p.angle) * p.speed * dt;
+                if (isWall(p.x, prevY)) p.angle = Math.PI - p.angle;
+                else p.angle = -p.angle;
+                spawnBurst(p.x, p.y, p.color, 5, 80, 3, 0.2);
+            } else {
+                spawnBurst(p.x, p.y, p.color, 6, 60, 3, 0.3);
+                enemyProjectiles.splice(i, 1);
+                continue;
+            }
+        }
+
         if (dist(p, player) < player.bodyRadius + p.radius && player.invincible <= 0) {
             damagePlayer(p.damage);
             spawnBurst(p.x, p.y, p.color, 8, 90, 4, 0.4);
@@ -382,27 +712,280 @@ function updateEnemyProjectiles(dt) {
 function drawEnemyProjectiles() {
     for (const p of enemyProjectiles) {
         ctx.save();
-        ctx.fillStyle = p.color;
-        ctx.strokeStyle = '#181b22';
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
-        ctx.fill(); ctx.stroke();
+        ctx.translate(p.x, p.y);
 
-        ctx.fillStyle = '#ffffff';
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, p.radius * 0.4, 0, Math.PI * 2);
-        ctx.fill();
+        if (p.visual === 'boulder') {
+            ctx.rotate(p.spin || 0);
+            ctx.fillStyle = '#795548';
+            ctx.strokeStyle = '#3e2723';
+            ctx.lineWidth = 2.5;
+            ctx.beginPath();
+            ctx.arc(0, 0, p.radius, 0, Math.PI * 2);
+            ctx.fill(); ctx.stroke();
+
+            ctx.strokeStyle = '#a1887f';
+            ctx.lineWidth = 1.8;
+            ctx.beginPath();
+            ctx.moveTo(-p.radius * 0.5, -p.radius * 0.3);
+            ctx.lineTo(0, 0);
+            ctx.lineTo(p.radius * 0.4, -p.radius * 0.5);
+            ctx.stroke();
+        } else if (p.visual === 'water_jet') {
+            ctx.rotate(p.angle);
+            ctx.fillStyle = '#0984e3';
+            ctx.strokeStyle = '#74b9ff';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.ellipse(0, 0, p.radius * 1.3, p.radius * 0.8, 0, 0, Math.PI * 2);
+            ctx.fill(); ctx.stroke();
+
+            ctx.fillStyle = '#ffffff';
+            ctx.beginPath();
+            ctx.arc(p.radius * 0.3, 0, p.radius * 0.35, 0, Math.PI * 2);
+            ctx.fill();
+        } else if (p.visual === 'spark') {
+            ctx.rotate(p.spin || p.angle);
+            ctx.fillStyle = '#a29bfe';
+            ctx.strokeStyle = '#6c5ce7';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(0, -p.radius * 1.3);
+            ctx.lineTo(p.radius * 0.7, 0);
+            ctx.lineTo(0, p.radius * 1.3);
+            ctx.lineTo(-p.radius * 0.7, 0);
+            ctx.closePath();
+            ctx.fill(); ctx.stroke();
+
+            ctx.fillStyle = '#ffffff';
+            ctx.beginPath();
+            ctx.arc(0, 0, p.radius * 0.35, 0, Math.PI * 2);
+            ctx.fill();
+        } else {
+            ctx.fillStyle = p.color;
+            ctx.strokeStyle = '#181b22';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(0, 0, p.radius, 0, Math.PI * 2);
+            ctx.fill(); ctx.stroke();
+
+            ctx.fillStyle = '#ffffff';
+            ctx.beginPath();
+            ctx.arc(0, 0, p.radius * 0.4, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
         ctx.restore();
+    }
+}
+
+// ─── Enemy Hazards (Ground Telegraphs & Traps) ───────────────
+const enemyHazards = [];
+
+function spawnEnemyHazard(x, y, radius, delay, duration, damage, type, color, glow) {
+    enemyHazards.push({
+        x, y, radius,
+        delay, maxDelay: delay,
+        duration, maxDuration: duration,
+        damage, type, color, glow,
+        triggered: false,
+        hitPlayer: false,
+    });
+}
+
+function updateEnemyHazards(dt) {
+    for (let i = enemyHazards.length - 1; i >= 0; i--) {
+        const h = enemyHazards[i];
+        if (h.delay > 0) {
+            h.delay -= dt;
+            if (h.delay <= 0) {
+                h.triggered = true;
+                doShake(3.8, 0.16);
+                spawnBurst(h.x, h.y, h.color, 16, 120, 5, 0.4);
+
+                if (dist(h, player) < h.radius + player.bodyRadius && player.invincible <= 0) {
+                    damagePlayer(h.damage);
+                    h.hitPlayer = true;
+                }
+            }
+        } else {
+            h.duration -= dt;
+            if (!h.hitPlayer && dist(h, player) < h.radius + player.bodyRadius && player.invincible <= 0) {
+                damagePlayer(h.damage);
+                h.hitPlayer = true;
+            }
+            if (h.duration <= 0) {
+                enemyHazards.splice(i, 1);
+            }
+        }
+    }
+}
+
+function drawEnemyHazards() {
+    for (const h of enemyHazards) {
+        ctx.save();
+        if (h.delay > 0) {
+            const progress = clamp(1 - (h.delay / h.maxDelay), 0, 1);
+            const pulse = 0.25 + 0.15 * Math.sin(Date.now() * 0.015);
+
+            ctx.strokeStyle = h.color;
+            ctx.lineWidth = 2.5;
+            ctx.globalAlpha = 0.75;
+            ctx.beginPath();
+            ctx.arc(h.x, h.y, h.radius, 0, Math.PI * 2);
+            ctx.stroke();
+
+            ctx.fillStyle = h.color;
+            ctx.globalAlpha = pulse * 0.55;
+            ctx.beginPath();
+            ctx.arc(h.x, h.y, h.radius * progress, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.fillStyle = '#ffffff';
+            ctx.globalAlpha = 0.85;
+            ctx.font = '900 13px "Segoe UI", sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText('⚠️', h.x, h.y + 5);
+        } else {
+            const alpha = clamp(h.duration / h.maxDuration, 0, 1);
+            ctx.globalAlpha = alpha;
+
+            if (h.type === 'water_geyser') {
+                ctx.fillStyle = '#74b9ff';
+                ctx.strokeStyle = '#0984e3';
+                ctx.lineWidth = 3;
+                ctx.beginPath();
+                ctx.ellipse(h.x, h.y, h.radius, h.radius * 0.6, 0, 0, Math.PI * 2);
+                ctx.fill(); ctx.stroke();
+
+                ctx.fillStyle = '#ffffff';
+                ctx.beginPath();
+                ctx.ellipse(h.x, h.y - 8, h.radius * 0.65, h.radius * 0.4, 0, 0, Math.PI * 2);
+                ctx.fill();
+            } else if (h.type === 'earth_spike') {
+                ctx.fillStyle = '#795548';
+                ctx.strokeStyle = '#2d1505';
+                ctx.lineWidth = 2.5;
+                ctx.beginPath();
+                ctx.moveTo(h.x - h.radius * 0.6, h.y);
+                ctx.lineTo(h.x, h.y - h.radius * 1.1);
+                ctx.lineTo(h.x + h.radius * 0.6, h.y);
+                ctx.closePath();
+                ctx.fill(); ctx.stroke();
+            } else if (h.type === 'lightning_strike') {
+                ctx.strokeStyle = '#ffffff';
+                ctx.lineWidth = 4;
+                ctx.beginPath();
+                ctx.moveTo(h.x, h.y - 180);
+                ctx.lineTo(h.x - 8, h.y - 90);
+                ctx.lineTo(h.x + 8, h.y - 50);
+                ctx.lineTo(h.x, h.y);
+                ctx.stroke();
+
+                ctx.fillStyle = '#a29bfe';
+                ctx.beginPath();
+                ctx.arc(h.x, h.y, h.radius, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+        ctx.restore();
+    }
+}
+
+// ─── Boss Skill Casting System ───────────────────────────────
+function castBossSkill(e, directAngle) {
+    e.bossSkillIndex = ((e.bossSkillIndex || 0) + 1) % 3;
+    const isEnraged = e.hp < e.maxHp * 0.35;
+
+    if (e.type === 'boss_water') {
+        // Water Boss Skills (Element 2)
+        if (e.bossSkillIndex === 0) {
+            spawnFloat(e.x, e.y - e.radius - 16, '🌊 SEMBURAN AIR!', '#74b9ff', 1.2);
+            doShake(3.0, 0.12);
+            const count = isEnraged ? 5 : 3;
+            const spread = 0.45;
+            for (let k = 0; k < count; k++) {
+                const a = directAngle - spread / 2 + (k / Math.max(1, count - 1)) * spread;
+                spawnEnemyProjectile(e.x, e.y, a, 280, 16, '#0984e3', 9, { visual: 'water_jet' });
+            }
+        } else if (e.bossSkillIndex === 1) {
+            spawnFloat(e.x, e.y - e.radius - 16, '🌊 OMBAK TSUNAMI!', '#00a8ff', 1.2);
+            doShake(4.5, 0.2);
+            const count = isEnraged ? 12 : 8;
+            for (let k = 0; k < count; k++) {
+                const a = (k / count) * Math.PI * 2;
+                spawnEnemyProjectile(e.x, e.y, a, 190, 18, '#74b9ff', 10, { visual: 'water_jet' });
+            }
+        } else {
+            spawnFloat(e.x, e.y - e.radius - 16, '🌊 GEYSER MENDIDIH!', '#dfe6e9', 1.2);
+            const count = isEnraged ? 3 : 2;
+            for (let k = 0; k < count; k++) {
+                const offset = k === 0 ? { x: 0, y: 0 } : { x: rng(-60, 60), y: rng(-60, 60) };
+                spawnEnemyHazard(player.x + offset.x, player.y + offset.y, 42, 0.95, 0.5, 26, 'water_geyser', '#0984e3', '#74b9ff');
+            }
+        }
+    } else if (e.type === 'boss_earth') {
+        // Earth Boss Skills (Element 3)
+        if (e.bossSkillIndex === 0) {
+            spawnFloat(e.x, e.y - e.radius - 16, '⛰️ GELOMBANG BATU!', '#d69e2e', 1.2);
+            doShake(4.0, 0.15);
+            const count = isEnraged ? 3 : 2;
+            const spread = 0.35;
+            for (let k = 0; k < count; k++) {
+                const a = directAngle - spread / 2 + (k / Math.max(1, count - 1)) * spread;
+                spawnEnemyProjectile(e.x, e.y, a, 200, 28, '#795548', 16, { visual: 'boulder' });
+            }
+        } else if (e.bossSkillIndex === 1) {
+            spawnFloat(e.x, e.y - e.radius - 16, '⛰️ GEMPA BUMI!', '#b7791f', 1.2);
+            doShake(6.0, 0.25);
+            spawnBurst(e.x, e.y, '#b7791f', 24, 180, 6, 0.5);
+            for (let k = 0; k < 8; k++) {
+                const a = (k / 8) * Math.PI * 2;
+                spawnEnemyProjectile(e.x, e.y, a, 240, 22, '#d69e2e', 10, { visual: 'boulder' });
+            }
+        } else {
+            spawnFloat(e.x, e.y - e.radius - 16, '⛰️ TOMBAK BUMI!', '#8d6e63', 1.2);
+            const count = isEnraged ? 4 : 3;
+            for (let k = 0; k < count; k++) {
+                const a = rng(0, Math.PI * 2);
+                const d = rng(40, 110);
+                spawnEnemyHazard(player.x + Math.cos(a) * d, player.y + Math.sin(a) * d, 40, 0.9, 0.45, 30, 'earth_spike', '#b7791f', '#d69e2e');
+            }
+        }
+    } else if (e.type === 'boss_lightning') {
+        // Lightning Boss Skills (Element 4)
+        if (e.bossSkillIndex === 0) {
+            spawnFloat(e.x, e.y - e.radius - 16, '⚡ SAMBARAN PETIR!', '#a29bfe', 1.2);
+            const count = isEnraged ? 4 : 3;
+            for (let k = 0; k < count; k++) {
+                const offset = k === 0 ? { x: 0, y: 0 } : { x: rng(-75, 75), y: rng(-75, 75) };
+                spawnEnemyHazard(player.x + offset.x, player.y + offset.y, 38, 0.8, 0.4, 30, 'lightning_strike', '#9b59b6', '#a29bfe');
+            }
+        } else if (e.bossSkillIndex === 1) {
+            spawnFloat(e.x, e.y - e.radius - 16, '⚡ NOVA KILAT!', '#e056fd', 1.2);
+            doShake(3.5, 0.15);
+            const count = isEnraged ? 12 : 8;
+            for (let k = 0; k < count; k++) {
+                const a = (k / count) * Math.PI * 2;
+                spawnEnemyProjectile(e.x, e.y, a, 270, 18, '#9b59b6', 8, { visual: 'spark', bounces: 2 });
+            }
+        } else {
+            spawnFloat(e.x, e.y - e.radius - 16, '⚡ TEMBAKAN PLASMA!', '#6c5ce7', 1.2);
+            doShake(4.0, 0.15);
+            for (let k = -1; k <= 1; k++) {
+                spawnEnemyProjectile(e.x, e.y, directAngle + k * 0.22, 380, 24, '#a29bfe', 9, { visual: 'spark' });
+            }
+        }
     }
 }
 
 // ─── Damage & Elimination ────────────────────────────────────
 function hitEnemy(e, damage, color = '#ffffff') {
-    e.hp -= damage;
+    const mult = (typeof player !== 'undefined' && player.damageMult) ? player.damageMult : 1.0;
+    const finalDamage = damage * mult;
+    e.hp -= finalDamage;
     e.flashTimer = 0.14;
-    const rounded = Math.round(damage);
-    const floatColor = damage >= 90 ? '#ff3838' : damage >= 45 ? '#e67e22' : '#ffffff';
+    const rounded = Math.round(finalDamage);
+    const floatColor = finalDamage >= 90 ? '#ff3838' : finalDamage >= 45 ? '#e67e22' : '#ffffff';
     spawnFloat(e.x, e.y - e.radius, `-${rounded}`, floatColor);
     spawnBurst(e.x, e.y, color, 6, 75, 3.5, 0.3);
     if (e.hp <= 0) killEnemy(e);
@@ -412,12 +995,35 @@ function killEnemy(e) {
     e.dead = true;
     if (typeof wave !== 'undefined') wave.kills++;
     player.mana = Math.min(player.maxMana, player.mana + 7);
-    spawnBurst(e.x, e.y, e.color, 18, 140, 5, 0.55);
-    spawnBurst(e.x, e.y, '#ffffff', 8, 90, 3, 0.35);
-    doShake(2.5, 0.12);
-    // Spawn XP Gem drop at enemy position
-    if (typeof spawnXpGem === 'function') {
-        spawnXpGem(e.x, e.y, e.xpValue || 5);
+
+    if (e.isBoss) {
+        doShake(8.0, 0.5);
+        spawnBurst(e.x, e.y, e.color, 45, 260, 7, 0.8);
+        spawnBurst(e.x, e.y, '#f1c40f', 30, 200, 5, 0.6);
+        spawnBurst(e.x, e.y, '#ffffff', 20, 140, 4, 0.4);
+
+        spawnFloat(e.x, e.y - e.radius - 20, '🏆 BOSS DIKALAHKAN!', '#f1c40f', 3.0);
+
+        // Spawn XP Gems explosion!
+        if (typeof spawnXpGem === 'function') {
+            for (let k = 0; k < 12; k++) {
+                spawnXpGem(e.x + rng(-25, 25), e.y + rng(-25, 25), Math.floor((e.xpValue || 200) / 10));
+            }
+        }
+
+        // Spawn Elemental Scroll Drop
+        if (typeof spawnScroll === 'function' && e.bossElement) {
+            spawnScroll(e.x, e.y, e.bossElement);
+        }
+    } else {
+        spawnBurst(e.x, e.y, e.color, 18, 140, 5, 0.55);
+        spawnBurst(e.x, e.y, '#ffffff', 8, 90, 3, 0.35);
+        doShake(2.5, 0.12);
+
+        // Spawn XP Gem drop at enemy position
+        if (typeof spawnXpGem === 'function') {
+            spawnXpGem(e.x, e.y, e.xpValue || 5);
+        }
     }
 }
 
@@ -448,8 +1054,7 @@ function updateEnemies(dt) {
 
         // ── Smart Anti-Stuck & Navigation AI ──
         const directAngle = Math.atan2(player.y - e.y, player.x - e.x);
-        
-        // Track displacement to detect if stuck against an obstacle
+
         const movedDist = Math.hypot(e.x - (e.lastX || e.x), e.y - (e.lastY || e.y));
         e.lastX = e.x;
         e.lastY = e.y;
@@ -460,7 +1065,6 @@ function updateEnemies(dt) {
             e.stuckTimer = Math.max(0, (e.stuckTimer || 0) - dt * 2.5);
         }
 
-        // If stuck for over 0.18s, pick an evasive angle to glide around the obstacle
         if (e.stuckTimer > 0.18) {
             e.steerTimer = 0.55;
             const side = (e.id % 2 === 0) ? 1 : -1;
@@ -484,9 +1088,31 @@ function updateEnemies(dt) {
         }
 
         const moveAngle = (e.steerTimer > 0) ? e.steerAngle : directAngle;
-        e.angle = directAngle; // Always face player for visual aiming
+        e.angle = directAngle;
 
-        if (e.type === 'wizard' && e.ranged) {
+        if (e.isBoss) {
+            // Boss Movement AI
+            const d = dist(e, player);
+            const preferDist = 180;
+            const moveDir = d < preferDist ? -0.4 : (d > 260 ? 1 : 0.2);
+            const spd = e.speed * e.slowFactor * (e.hp < e.maxHp * 0.35 ? 1.25 : 1.0);
+            const moveDirAngle = moveDir < 0 ? moveAngle + Math.PI : moveAngle;
+            const nx = e.x + (moveDir !== 0 ? Math.cos(moveDirAngle) * spd + e.vx : e.vx) * dt;
+            const ny = e.y + (moveDir !== 0 ? Math.sin(moveDirAngle) * spd + e.vy : e.vy) * dt;
+            wallSlide(e, nx, ny, e.radius);
+
+            if (dist(e, player) < player.bodyRadius + e.radius + 3 && player.invincible <= 0) {
+                damagePlayer(e.damage);
+            }
+
+            // Boss Skill Casting Cycle
+            e.bossSkillTimer -= dt;
+            if (e.bossSkillTimer <= 0) {
+                const isEnraged = e.hp < e.maxHp * 0.35;
+                e.bossSkillTimer = isEnraged ? rng(1.8, 2.5) : rng(2.6, 3.4);
+                castBossSkill(e, directAngle);
+            }
+        } else if (e.type === 'wizard' && e.ranged) {
             const d = dist(e, player);
             const preferDist = 240;
             const moveDir = d < preferDist ? -1 : (d > 320 ? 1 : 0);
@@ -512,7 +1138,7 @@ function updateEnemies(dt) {
             }
         }
 
-        // Failsafe: if an enemy ever gets inside a wall, gently push out toward open floor
+        // Push out of walls failsafe
         if (isWall(e.x, e.y)) {
             const tcX = Math.floor(e.x / TILE) * TILE + TILE / 2;
             const tcY = Math.floor(e.y / TILE) * TILE + TILE / 2;
@@ -564,4 +1190,3 @@ function drawEnemies() {
         }
     }
 }
-

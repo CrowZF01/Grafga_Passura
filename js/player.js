@@ -14,6 +14,8 @@ const player = {
     mana: 100,
     maxMana: 100,
     manaRegen: 10,
+    damageMult: 1.0,
+    upgradeLevels: { strength: 0, speed: 0, hp: 0, mana: 0, magnet: 0 },
     queue: [],
     castCooldown: 0,
     castCooldownMax: 0.38,
@@ -25,7 +27,222 @@ const player = {
     xp: 0,
     nextXp: 20,
     pickupRadius: 105,
+    unlockedElements: { '1': true, '2': false, '3': false, '4': false },
 };
+
+// ─── Element Unlock State & Methods ──────────────────────────
+const elementUnlockFlash = { '1': 0, '2': 0, '3': 0, '4': 0 };
+let activeUnlockBanner = null;
+
+function isElementUnlocked(key) {
+    if (!player || !player.unlockedElements) return key === '1';
+    return !!player.unlockedElements[key];
+}
+
+function unlockElement(key) {
+    if (!player.unlockedElements) {
+        player.unlockedElements = { '1': true, '2': false, '3': false, '4': false };
+    }
+    if (player.unlockedElements[key]) return; // Already unlocked
+
+    player.unlockedElements[key] = true;
+    elementUnlockFlash[key] = 2.5;
+
+    const el = ELEMENTS[key];
+    const elName = el ? el.name : key;
+
+    // Fully replenish player HP and Mana as celebration reward
+    player.hp = player.maxHp;
+    player.mana = player.maxMana;
+
+    // Trigger HUD announcement banner
+    activeUnlockBanner = {
+        key,
+        name: elName,
+        color: el ? el.color : '#f1c40f',
+        timer: 5.0,
+        maxTimer: 5.0,
+    };
+
+    // Celebratory effects
+    if (typeof spawnBurst === 'function') {
+        spawnBurst(player.x, player.y, el ? el.color : '#f1c40f', 36, 210, 6, 0.7);
+        spawnBurst(player.x, player.y, '#ffffff', 20, 150, 4, 0.45);
+        spawnBurst(player.x, player.y, '#f1c40f', 18, 120, 3.5, 0.4);
+    }
+    if (typeof spawnFloat === 'function') {
+        spawnFloat(player.x, player.y - player.bodyRadius - 26, `ELEMEN [${elName.toUpperCase()}] TERBUKA!`, el ? el.color : '#f1c40f', 3.0);
+    }
+    if (typeof doShake === 'function') {
+        doShake(6.5, 0.35);
+    }
+}
+
+// ─── Elemental Scrolls System ────────────────────────────────
+const scrolls = [];
+
+function spawnScroll(x, y, elementKey) {
+    const el = ELEMENTS[elementKey];
+    if (!el) return;
+    scrolls.push({
+        x, y,
+        elementKey,
+        name: el.name,
+        color: el.color,
+        glow: el.glow,
+        icon: el.icon,
+        bobPhase: rng(0, Math.PI * 2),
+        collected: false,
+        spawnTimer: 0,
+        homing: false,
+        speed: 160,
+    });
+
+    if (typeof spawnBurst === 'function') {
+        spawnBurst(x, y, el.color, 28, 180, 6, 0.65);
+        spawnBurst(x, y, '#ffffff', 16, 120, 4, 0.4);
+    }
+    if (typeof spawnFloat === 'function') {
+        spawnFloat(x, y - 35, `Gulungan Elemen ${el.name}!`, el.color, 2.5);
+    }
+    if (typeof doShake === 'function') {
+        doShake(5.0, 0.3);
+    }
+}
+
+function updateScrolls(dt) {
+    const p = player;
+    for (let i = scrolls.length - 1; i >= 0; i--) {
+        const s = scrolls[i];
+        s.bobPhase += dt * 3.5;
+        s.spawnTimer += dt;
+
+        // Sparkle particles occasionally rising from scroll
+        if (Math.random() < 0.28 && typeof spawnParticle === 'function') {
+            spawnParticle(s.x + rng(-14, 14), s.y + rng(-10, 10), rng(-10, 10), rng(-24, -6), s.color, 0.35, 3.2, 0, true);
+        }
+
+        const d = dist(s, p);
+        if (d < p.pickupRadius) {
+            s.homing = true;
+        }
+
+        if (s.homing) {
+            const angle = Math.atan2(p.y - s.y, p.x - s.x);
+            s.speed += dt * 620;
+            s.x += Math.cos(angle) * s.speed * dt;
+            s.y += Math.sin(angle) * s.speed * dt;
+        }
+
+        if (d < p.bodyRadius + 22) {
+            s.collected = true;
+            unlockElement(s.elementKey);
+            scrolls.splice(i, 1);
+        }
+    }
+
+    // Element flash timers countdown
+    for (const k in elementUnlockFlash) {
+        if (elementUnlockFlash[k] > 0) {
+            elementUnlockFlash[k] = Math.max(0, elementUnlockFlash[k] - dt);
+        }
+    }
+
+    if (activeUnlockBanner) {
+        activeUnlockBanner.timer -= dt;
+        if (activeUnlockBanner.timer <= 0) activeUnlockBanner = null;
+    }
+}
+
+function drawScrolls() {
+    for (const s of scrolls) {
+        const bob = Math.sin(s.bobPhase) * 4.5;
+        const x = s.x;
+        const y = s.y + bob;
+
+        ctx.save();
+        ctx.translate(x, y);
+
+        // Ground drop shadow
+        ctx.save();
+        ctx.scale(1, 0.45);
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.35)';
+        ctx.beginPath();
+        ctx.arc(0, 24 - bob * 0.5, 20, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+
+        // Pulsing glow aura
+        const glowPulse = 0.35 + 0.18 * Math.sin(s.bobPhase * 1.5);
+        ctx.fillStyle = s.glow;
+        ctx.globalAlpha = glowPulse;
+        ctx.beginPath();
+        ctx.arc(0, 0, 30, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Magic runic circle around scroll
+        ctx.strokeStyle = s.color;
+        ctx.lineWidth = 1.6;
+        ctx.globalAlpha = 0.6 + 0.35 * Math.sin(s.bobPhase);
+        ctx.beginPath();
+        ctx.arc(0, 0, 22, 0, Math.PI * 2);
+        ctx.stroke();
+
+        ctx.globalAlpha = 1.0;
+
+        // Ancient Parchment Scroll Body
+        ctx.fillStyle = '#f9f3e3';
+        ctx.strokeStyle = '#2c1e14';
+        ctx.lineWidth = 2.2;
+        ctx.beginPath();
+        ctx.roundRect(-16, -11, 32, 22, 4);
+        ctx.fill();
+        ctx.stroke();
+
+        // Scroll golden wooden roller ends (left and right)
+        ctx.fillStyle = '#f1c40f';
+        ctx.strokeStyle = '#78350f';
+        ctx.lineWidth = 1.8;
+        // Left roller
+        ctx.beginPath();
+        ctx.roundRect(-19, -14, 5, 28, 2.5);
+        ctx.fill(); ctx.stroke();
+        // Right roller
+        ctx.beginPath();
+        ctx.roundRect(14, -14, 5, 28, 2.5);
+        ctx.fill(); ctx.stroke();
+
+        // Element Colored Ribbon Band in Center
+        ctx.fillStyle = s.color;
+        ctx.fillRect(-5, -11, 10, 22);
+
+        // Element Symbol inside ribbon
+        drawElementIcon(0, 0, 5.5, { icon: s.icon, color: '#ffffff' }, 1.0, '#ffffff');
+
+        ctx.restore();
+
+        // Floating Title Pill Badge above Scroll
+        ctx.save();
+        ctx.font = '900 11px "Segoe UI", sans-serif';
+        const labelText = `📜 GULUNGAN ELEMEN ${s.name.toUpperCase()}`;
+        const tw = ctx.measureText(labelText).width;
+        const pillW = tw + 18, pillH = 20;
+        const pillX = x - pillW / 2;
+        const pillY = y - 36;
+
+        ctx.fillStyle = 'rgba(16, 20, 28, 0.92)';
+        ctx.strokeStyle = s.color;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.roundRect(pillX, pillY, pillW, pillH, 6);
+        ctx.fill(); ctx.stroke();
+
+        ctx.fillStyle = '#ffffff';
+        ctx.textAlign = 'center';
+        ctx.fillText(labelText, x, pillY + 14);
+        ctx.restore();
+    }
+}
 
 // ─── Player Damage ───────────────────────────────────────────
 function damagePlayer(amount) {

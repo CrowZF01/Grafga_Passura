@@ -53,6 +53,12 @@ const mouse = {
 };
 
 window.addEventListener('keydown', e => {
+    // Disable all keyboard input during 3-Card Upgrade selection (player must choose by clicking)
+    if (gameState === 'upgrade') {
+        e.preventDefault();
+        return;
+    }
+
     keys[e.code] = true;
 
     // Element selection strictly 1, 2, 3, 4
@@ -63,6 +69,15 @@ window.addEventListener('keydown', e => {
     };
     const elKey = map[e.code] || map[e.key];
     if (elKey && gameState === 'playing' && typeof player !== 'undefined') {
+        if (typeof isElementUnlocked === 'function' && !isElementUnlocked(elKey)) {
+            const reqWave = elKey === '2' ? 5 : elKey === '3' ? 10 : 15;
+            if (typeof spawnFloat === 'function') {
+                spawnFloat(player.x, player.y - player.bodyRadius - 15, `Elemen ${ELEMENTS[elKey].name} Terkunci (Wave ${reqWave})!`, '#a4b0be', 0.9);
+            }
+            if (typeof doShake === 'function') doShake(1.5, 0.05);
+            e.preventDefault();
+            return;
+        }
         if (player.queue.length < 3) {
             player.queue.push(elKey);
             if (typeof spawnBurst === 'function') {
@@ -71,7 +86,7 @@ window.addEventListener('keydown', e => {
         }
         e.preventDefault();
     }
-    if (e.code === 'Space' && gameState !== 'playing' && typeof startGame === 'function') {
+    if (e.code === 'Space' && (gameState === 'start' || gameState === 'dead') && typeof startGame === 'function') {
         startGame();
     }
     if (e.code === 'Escape') {
@@ -94,11 +109,76 @@ canvas.addEventListener('mousemove', e => {
         mouse.x = mouse.screenX + camera.x;
         mouse.y = mouse.screenY + camera.y;
     }
+    if (gameState === 'upgrade' && typeof getUpgradeCardAtPos === 'function') {
+        hoveredUpgradeCard = getUpgradeCardAtPos(mouse.screenX, mouse.screenY);
+        canvas.style.cursor = (hoveredUpgradeCard >= 0) ? 'pointer' : 'default';
+    } else {
+        canvas.style.cursor = 'crosshair';
+    }
 });
 
 canvas.addEventListener('mousedown', e => {
     e.preventDefault();
-    if (e.button === 0) mouse.leftPending = true;
+    if (e.button === 0) {
+        // Check if click was on 3-Card Upgrade selection
+        if (gameState === 'upgrade' && typeof getUpgradeCardAtPos === 'function' && typeof selectUpgradeCard === 'function') {
+            const idx = getUpgradeCardAtPos(mouse.screenX, mouse.screenY);
+            if (idx >= 0) {
+                selectUpgradeCard(idx);
+            }
+            return;
+        }
+
+        // Check if click was on HUD hotbar buttons
+        if (gameState === 'playing' && typeof player !== 'undefined') {
+            const btnSize = 48, btnGap = 8;
+            const elBarW = 4 * (btnSize + btnGap) - btnGap;
+            const qBarW = 3 * (btnSize + btnGap) - btnGap;
+            const barTotalW = elBarW + 20 + qBarW;
+            const startBarX = (BASE_W - barTotalW) / 2;
+            const barY = BASE_H - btnSize - 32;
+
+            const mx = mouse.screenX;
+            const my = mouse.screenY;
+
+            // 1. Check element buttons (1-4)
+            for (let i = 0; i < 4; i++) {
+                const bx = startBarX + i * (btnSize + btnGap);
+                const by = barY;
+                if (mx >= bx && mx <= bx + btnSize && my >= by && my <= by + btnSize) {
+                    const k = String(i + 1);
+                    if (typeof isElementUnlocked === 'function' && !isElementUnlocked(k)) {
+                        const reqWave = k === '2' ? 5 : k === '3' ? 10 : 15;
+                        if (typeof spawnFloat === 'function') {
+                            spawnFloat(player.x, player.y - player.bodyRadius - 15, `Elemen ${ELEMENTS[k].name} Terkunci (Wave ${reqWave})!`, '#a4b0be', 0.9);
+                        }
+                        if (typeof doShake === 'function') doShake(1.5, 0.05);
+                    } else if (player.queue.length < 3) {
+                        player.queue.push(k);
+                        if (typeof spawnBurst === 'function') {
+                            spawnBurst(player.x, player.y - player.bodyRadius - 20, ELEMENTS[k].color, 5, 50, 3, 0.25);
+                        }
+                    }
+                    return; // Consumed by hotbar click
+                }
+            }
+
+            // 2. Check queue slots (click to remove)
+            const queueStartX = startBarX + elBarW + 26;
+            for (let i = 0; i < 3; i++) {
+                const qx = queueStartX + i * (btnSize + btnGap);
+                const qy = barY;
+                if (mx >= qx && mx <= qx + btnSize && my >= qy && my <= qy + btnSize) {
+                    if (player.queue.length > i) {
+                        player.queue.splice(i, 1);
+                    }
+                    return; // Consumed by queue click
+                }
+            }
+        }
+
+        mouse.leftPending = true;
+    }
     if (e.button === 2) mouse.rightPending = true;
 });
 
